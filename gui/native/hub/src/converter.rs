@@ -42,6 +42,7 @@ pub fn signal_to_mml_song_options(options: &SignalMmlSongOptions) -> MmlSongOpti
     MmlSongOptions {
         auto_boot_velocity: options.auto_boot_velocity,
         auto_equalize_note_length: options.auto_equalize_note_length,
+        merge_meta_tracks: false,
         velocity_min: options.velocity_min as u8,
         velocity_max: options.velocity_max as u8,
         min_gap_for_chord: options.min_gap_for_chord as u8,

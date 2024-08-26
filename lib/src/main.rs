@@ -22,6 +22,6 @@ fn main() {
             track.mml_note_length,
         );
 
-        println!("{}\n", track.to_mml_debug());
+        println!("{}\n", track.to_mml());
     }
 }

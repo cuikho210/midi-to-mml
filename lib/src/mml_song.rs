@@ -6,6 +6,7 @@ use crate::{mml_event::BridgeEvent, mml_track::MmlTrack, parser::{bridge_meta_fr
 pub struct MmlSongOptions {
     pub auto_boot_velocity: bool,
     pub auto_equalize_note_length: bool,
+    pub merge_meta_tracks: bool,
     pub velocity_min: u8,
     pub velocity_max: u8,
     pub min_gap_for_chord: u8,
@@ -17,6 +18,7 @@ impl Default for MmlSongOptions {
         Self {
             auto_boot_velocity: false,
             auto_equalize_note_length: false,
+            merge_meta_tracks: false,
             velocity_min: 0,
             velocity_max: 15,
             min_gap_for_chord: 0,
@@ -57,7 +59,7 @@ impl MmlSong {
             None => 480,
         };
 
-        let meta_events = get_bridge_meta_events(&smf.tracks);
+        let meta_events = get_bridge_meta_events(&smf.tracks, &options);
 
         let smf_tracks = smf.make_static().tracks;
         let bridge_note_events = get_bridge_note_events(smf_tracks);
@@ -147,7 +149,7 @@ impl MmlSong {
 }
 
 fn bridge_events_to_tracks(
-    bridge_meta_events: Vec<BridgeEvent>,
+    bridge_meta_events: Vec<Vec<BridgeEvent>>,
     bridge_events: Vec<Vec<BridgeEvent>>,
     song_options: &MmlSongOptions,
     ppq: u16,
@@ -158,7 +160,11 @@ fn bridge_events_to_tracks(
     for events in bridge_events {
         let options = song_options.to_owned();
         let index = handles.len();
-        let meta_events = bridge_meta_events.to_owned();
+
+        let meta_events = match song_options.merge_meta_tracks {
+            true => bridge_meta_events.to_owned().into_iter().flatten().collect(),
+            false => bridge_meta_events.get(handles.len()).unwrap().to_owned(),
+        };
 
         let handle = thread::spawn::<_, MmlTrack>(move || {
             MmlTrack::from_bridge_events(index.to_string(), meta_events, events, options, ppq)
@@ -205,12 +211,29 @@ fn get_bridge_note_events(smf_tracks: Vec<Vec<TrackEvent<'static>>>) -> Vec<Vec<
     events
 }
 
-fn get_bridge_meta_events(smf_tracks: &Vec<Vec<TrackEvent>>) -> Vec<BridgeEvent> {
-    let mut meta_events: Vec<BridgeEvent> = Vec::new();
+fn get_bridge_meta_events(smf_tracks: &Vec<Vec<TrackEvent>>, song_options: &MmlSongOptions) -> Vec<Vec<BridgeEvent>> {
+    let mut first_tempo: Option<BridgeEvent> = None;
+    let mut meta_events: Vec<Vec<BridgeEvent>> = Vec::new();
 
     for track in smf_tracks.iter() {
         let mut events = bridge_meta_from_midi_track(track);
-        meta_events.append(&mut events);
+
+        if song_options.merge_meta_tracks == false {
+            if let Some(tempo_event) = first_tempo.as_ref() {
+                events.insert(0, tempo_event.to_owned());
+                println!("Inserted a tempo event info events");
+            } else {
+                for event in events.iter() {
+                    if let BridgeEvent::Tempo(_tempo, state) = event {
+                        if state.position_in_tick == 0 {
+                            first_tempo = Some(event.to_owned());
+                        }
+                    }
+                }
+            }
+        }
+
+        meta_events.push(events);
     }
 
     meta_events
@@ -222,3 +245,4 @@ fn get_ppq_from_smf(smf: &Smf) -> Option<u16> {
         _ => None,
     }
 }
+
